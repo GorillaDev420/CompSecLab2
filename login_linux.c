@@ -24,11 +24,6 @@ void sighandler() {
 	/* see 'man 2 signal' */
 }
 
-//Add strings to db.
-//Fetch data through mypwd struct
-//When fetched compare using strcmp
-//Then add salt...
-
 int main(int argc, char *argv[]) {
 
 	mypwent* passwddata; /* this has to be redefined in step 2 */
@@ -79,7 +74,7 @@ int main(int argc, char *argv[]) {
 		printf("Value of variable 'important 1' after input of login name: %*.*s\n",
 				LENGTH - 1, LENGTH - 1, important1);
 		printf("Value of variable 'important 2' after input of login name: %*.*s\n",
-		 		LENGTH - 1, LENGTH - 1, important2);
+					LENGTH - 1, LENGTH - 1, important2);
 		user_pass = getpass(prompt);
 		printf("DEBUG: this is the supplied password: %s \n",user_pass);
 		passwddata = mygetpwnam(user);
@@ -98,12 +93,23 @@ int main(int argc, char *argv[]) {
 
 				printf(" You're in  !\n");
 
+				/* Display the number of failed login attempts */
+				printf("Number of failed login attempts: %d\n", passwddata->failed_attempts);
+
+				/* Reset the number of failed login attempts */
+				passwddata->failed_attempts = 0;
+				mysetpwnam(passwddata);
+
 				/*  check UID, see setuid(2) */
 				/*  start a shell, use execve(2) */
 
 			}
 			else{
 				printf("login failed\n");
+
+				/* Increment the number of failed login attempts */
+				passwddata->failed_attempts += 1;
+				mysetpwnam(passwddata);
 			}
 		}
 	
