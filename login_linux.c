@@ -11,107 +11,132 @@
 #include <pwd.h>
 #include <sys/types.h>
 #include <crypt.h>
-/* Uncomment next line in step 2 */
 #include "pwent.h"
 
 #define TRUE 1
 #define FALSE 0
 #define LENGTH 16
+#define AGE_THRESHOLD 10  /* When pwage exceeds this, prompt for a password change */
 
 void sighandler() {
-
-	/* add signalhandling routines here */
-	/* see 'man 2 signal' */
+    /* add signal handling routines here */
+    /* see 'man 2 signal' */
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
+    mypwent* passwddata;  /* Pointer to the user's password record from passdb */
 
-	mypwent* passwddata; /* this has to be redefined in step 2 */
-	/* see pwent.h */
+    char important1[LENGTH] = "**IMPORTANT 1**";
+    char user[LENGTH];
+    char important2[LENGTH] = "**IMPORTANT 2**";
 
-	char important1[LENGTH] = "**IMPORTANT 1**";
+    char prompt[] = "password: ";
+    char* user_pass;
 
-	char user[LENGTH];
+    sighandler();
 
-	char important2[LENGTH] = "**IMPORTANT 2**";
+    while (TRUE) {
+        /* Display values of important variables (for testing buffer overflows) */
+        printf("Value of variable 'important1' before input of login name: %s\n", important1);
+        printf("Value of variable 'important2' before input of login name: %s\n", important2);
 
+        printf("login: ");
+        fflush(NULL);         /* Flush all output buffers */
+        __fpurge(stdin);      /* Purge any data in stdin buffer */
 
-	//char   *c_pass; //you might want to use this variable later...
-	char prompt[] = "password: ";
-	char *user_pass;
+        if (fgets(user, sizeof(user), stdin) != NULL) {
+            int len = strlen(user);
+            if (len > 0 && user[len - 1] == '\n') {
+                user[len - 1] = '\0';
+                __fpurge(stdin);
+            }
+        }
+        else {
+            exit(0);
+        }
+   
+        printf("%s", user);
 
-	sighandler();
+        printf("Value of variable 'important1' after input of login name: %*.*s\n",
+            LENGTH - 1, LENGTH - 1, important1);
+        printf("Value of variable 'important2' after input of login name: %*.*s\n",
+            LENGTH - 1, LENGTH - 1, important2);
 
-	while (TRUE) {
-		/* check what important variable contains - do not remove, part of buffer overflow test */
-		printf("Value of variable 'important1' before input of login name: %s\n",
-				important1);
-		printf("Value of variable 'important2' before input of login name: %s\n",
-				important2);
+        /* Get the password (using getpass() from unistd.h) */
+        user_pass = getpass(prompt);
+        printf("DEBUG: this is the supplied password: %s \n", user_pass);
 
-		printf("login: ");
-		fflush(NULL); /* Flush all  output buffers */
-		__fpurge(stdin); /* Purge any data in stdin buffer */
+        /* Look up the user in our password database (passdb) */
+        passwddata = mygetpwnam(user);
+        if (passwddata == NULL) {
+            printf("User not found. Exiting.\n");
+            exit(0);
+        }
 
+        /* Encrypt the user-supplied password using crypt() with the stored salt */
+        char* encrypted_input = crypt(user_pass, passwddata->passwd_salt);
 
-		if (fgets (user, sizeof(user), stdin) != NULL){
-			int len = strlen(user); /* gets() is vulnerable to buffer */
-			if (len > 0 && user [len-1] == '\n') {
-				user[len-1] = '\0';
-				__fpurge(stdin);
-			}
-			
-		}
-		else{
-			exit(0);
-		}
-		printf (user);
-		/*  overflow attacks.  */
-	
-		//remove \n
+        if (strcmp(passwddata->passwd, encrypted_input) == 0) {
+            /* Successful login */
+            printf("You're in!\n");
 
-		/* check to see if important variable is intact after input of login name - do not remove */
-		printf("Value of variable 'important 1' after input of login name: %*.*s\n",
-				LENGTH - 1, LENGTH - 1, important1);
-		printf("Value of variable 'important 2' after input of login name: %*.*s\n",
-					LENGTH - 1, LENGTH - 1, important2);
-		user_pass = getpass(prompt);
-		printf("DEBUG: this is the supplied password: %s \n",user_pass);
-		passwddata = mygetpwnam(user);
-		if (passwddata==NULL)
-		{
-			printf("null exit");
-			exit(0);
-		}
-		int v1 = strcmp(passwddata->pwname, user);
-		int v2 = strcmp(passwddata->passwd, user_pass);
-		if (passwddata != NULL) {
-			/* You have to encrypt user_pass for this to work */
-			/* Don't forget to include the salt */
+            /* Display the number of failed login attempts, then reset them */
+            printf("Number of failed login attempts: %d\n", passwddata->pwfailed);
+            passwddata->pwfailed = 0;
 
-			if ((v1 + v2) == 0) {
+            /* Increment the password age (i.e., count of successful logins) */
+            passwddata->pwage++;
 
-				printf(" You're in  !\n");
+            /* If the password age exceeds the threshold, prompt the user to change the password */
+            if (passwddata->pwage >= AGE_THRESHOLD) {
+                printf("Your password has been used %d times.\n", passwddata->pwage);
+                printf("It is recommended that you change your password.\n");
 
-				/* Display the number of failed login attempts */
-				printf("Number of failed login attempts: %d\n", passwddata->failed_attempts);
+                char response[4];
+                printf("Do you want to change your password now? (y/n): ");
+                fflush(stdout);
+                if (fgets(response, sizeof(response), stdin) != NULL) {
+                    if (response[0] == 'y' || response[0] == 'Y') {
+                        char* new_pass = getpass("Enter new password: ");
+                        char* confirm_pass = getpass("Re-enter new password: ");
+                        if (strcmp(new_pass, confirm_pass) == 0) {
+                            /* Encrypt the new password with the same stored salt */
+                            char* new_encrypted = crypt(new_pass, passwddata->passwd_salt);
+                            /* Update the stored password (note: strdup allocates new memory) */
+                            passwddata->passwd = strdup(new_encrypted);
+                            /* Reset the password age after a change */
+                            passwddata->pwage = 0;
+                            printf("Password changed successfully. Please re-login with your new password.\n");
+                        }
+                        else {
+                            printf("Passwords do not match. Password not changed.\n");
+                        }
+                    }
+                    else {
+                        printf("Password remains unchanged.\n");
+                    }
+                }
+            }
 
-				/* Reset the number of failed login attempts */
-				passwddata->failed_attempts = 0;
-				mysetpwnam(passwddata);
+            /* Update the database record with the reset failed attempts, updated password age,
+               and possibly the new encrypted password */
+            if (mysetpwent(passwddata->pwname, passwddata) != 0) {
+                printf("Error updating password record.\n");
+            }
 
-				/*  check UID, see setuid(2) */
-				/*  start a shell, use execve(2) */
+            /* Here you might check the user's UID and launch a shell using execve(), etc. */
 
-			}
-			else{
-				printf("login failed\n");
+        }
+        else {
+            /* Login failed */
+            printf("login failed\n");
 
-				/* Increment the number of failed login attempts */
-				passwddata->failed_attempts += 1;
-				mysetpwnam(passwddata);
-			}
-		}
-	
-	}
-	return 0; }
+            /* Increment the number of failed login attempts */
+            passwddata->pwfailed++;
+            if (mysetpwent(passwddata->pwname, passwddata) != 0) {
+                printf("Error updating password record.\n");
+            }
+        }
+    }
+    return 0;
+}
