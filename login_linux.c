@@ -21,7 +21,8 @@
 #define PW_MAX_AGE 2 //for debugging
 
 void sighandler() {
-
+	signal(SIGQUIT, SIG_IGN);
+	signal(SIGINT, SIG_IGN);
 	/* add signalhandling routines here */
 	/* see 'man 2 signal' */
 }
@@ -55,6 +56,7 @@ int main(int argc, char *argv[]) {
 
 	sighandler();
 
+
 	while (TRUE) {
 		/* check what important variable contains - do not remove, part of buffer overflow test */
 		printf("Value of variable 'important1' before input of login name: %s\n",
@@ -71,7 +73,6 @@ int main(int argc, char *argv[]) {
 			int len = strlen(user); /* gets() is vulnerable to buffer */
 			if (len > 0 && user [len-1] == '\n') {
 				user[len-1] = '\0';
-				int p = 0;
 				__fpurge(stdin);
 			}
 		}
@@ -120,10 +121,19 @@ int main(int argc, char *argv[]) {
 				need_update = true;
 				/*  check UID, see setuid(2) */
 				/*  start a shell, use execve(2) */
-
+				
 			}
 			else if(v2 != 0){
-				passwddata->pwfailed++;
+				int failed_nr = ++passwddata->pwfailed;
+				if(failed_nr >= 5){
+					printf("Brute force detected, sleeping for 10 seconds\n");
+					if(failed_nr > 20){
+						sleep(2);
+					}
+					else{
+						sleep(5);
+					} //DEBUG THIESE VALUES SHOULD
+				}
 				mysetpwent(user,passwddata);
 				printf("Failed logins for user: %s: %d\n",user,passwddata->pwfailed);
 			}
@@ -149,10 +159,29 @@ int get_user_response(){
 	} 
 	else{
 		free(response);
-		printf("invalid option dipshit");
+		printf("invalid option");
 		__fpurge(stdin);
 		get_user_response();
 	}
+}
+
+char* generate_random_salt(){
+	//genrate value between ascii 1 and z
+	//assign to a generated array
+	//???
+	//profit
+	char* res;
+	char salts[65] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./";
+	int min = 0;
+	int max = 64;
+	srand(time(NULL));
+	for(int i = 0; i<2; i++){
+		int val = min + rand() % (max - min);
+		res[i] = val;
+	}
+	printf("%c", res[0]);
+	printf("%c", res[1]);
+	return res;
 }
 
 bool change_password(char* user){
@@ -166,7 +195,6 @@ bool change_password(char* user){
 	old_pwd = getpass(prompt_update_pwd);
 	encrypted = crypt(old_pwd,oldpw->passwd_salt);
 	int v = strcmp(encrypted, oldpw->passwd);
-	int flag = 0;
 	printf("\n");
 	if(v == 0){
 		new_pwd = getpass(prompt_update_pwd2);
@@ -174,6 +202,8 @@ bool change_password(char* user){
 		pw->pwage = 0;
 		pw->pwfailed = 0;
 		pw->passwd_salt = "ST";
+		
+		pw->uid = oldpw->uid;
 		pw->pwname = user;
 		mysetpwent(user, pw);
 		printf("update db...\n");
