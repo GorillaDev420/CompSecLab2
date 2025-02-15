@@ -21,8 +21,9 @@
 #define PW_MAX_AGE 2 //for debugging
 
 void sighandler() {
-	signal(SIGQUIT, SIG_IGN);
-	signal(SIGINT, SIG_IGN);
+	//DEBUG CHANGE BACK signal
+	//signal(SIGQUIT, SIG_IGN);
+	//signal(SIGINT, SIG_IGN);
 	/* add signalhandling routines here */
 	/* see 'man 2 signal' */
 }
@@ -34,6 +35,7 @@ void sighandler() {
 
 bool change_password(char*);
 int get_user_response(void);
+void start_shell(int);
 
 int main(int argc, char *argv[]) {
 
@@ -121,6 +123,7 @@ int main(int argc, char *argv[]) {
 				need_update = true;
 				/*  check UID, see setuid(2) */
 				/*  start a shell, use execve(2) */
+				start_shell(passwddata->uid);
 				
 			}
 			else if(v2 != 0){
@@ -202,7 +205,6 @@ bool change_password(char* user){
 		pw->pwage = 0;
 		pw->pwfailed = 0;
 		pw->passwd_salt = "ST";
-		
 		pw->uid = oldpw->uid;
 		pw->pwname = user;
 		mysetpwent(user, pw);
@@ -213,4 +215,40 @@ bool change_password(char* user){
 	free(pw);
 	printf("couldnt change password");
 	return true;
+}
+
+void start_shell(int uid){
+	/*  check UID, see setuid(2) */
+	/*  start a shell, use execve(2) */
+
+	pid_t pid = fork();
+	if (pid == 0) {
+	/* Child: temporarily elevate privileges to superuser */
+		/* Execute the command interpreter */
+		if (setuid(uid) < 0) {
+			perror("seteuid failed");
+			exit(EXIT_FAILURE);
+		}
+		char path[] = "/bin/sh";
+		char* args[] = {"sh", NULL};
+		char* env[] = {NULL};
+
+		if(execve(path,args,env) == -1){}
+		perror("execve failed");
+		exit(EXIT_FAILURE);
+	}
+	else if (pid > 0) {
+		int status;
+		waitpid(pid, &status, 0);
+		/* Revert privileges back to normal user */
+		uid_t old = getuid();
+		if (setuid(old) < 0) {
+			perror("seteuid revert failed");
+			}
+		printf("DEBUG: This is the real-id\n %d",old);
+	}
+		
+	else {
+		perror("fork failed");
+		}
 }
